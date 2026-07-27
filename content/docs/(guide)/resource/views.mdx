@@ -236,7 +236,9 @@ COMMENT ON TABLE blog.blog_settings IS '{
 
 ## Inline Child Forms
 
-Junction / detail tables (e.g. `order_items`, `purchase_order_items`) can opt into being rendered inside their parent record using `inline_form: true`. When enabled, they appear as an editable section on the parent's detail page instead of as a top-level resource.
+Junction / detail tables (e.g. `order_items`, `purchase_order_items`) are rendered inside their parent record's detail page automatically, based on the foreign-key relationship — no metadata flag required. Rows inside that tab always open in an inline slide-over ("sheet") rather than navigating to a separate page.
+
+`inline_form: true` is a related but separate opt-in: it makes the table's *own* standalone views (table/grid/kanban/etc.) use the same sheet overlay too, for the case where the table is ever browsed directly instead of through its parent's tab. Combine it with `"display": "none"` to also hide the table from the schema's resource list — the two settings are independent, but commonly paired for junction/line-item tables:
 
 ```sql
 COMMENT ON TABLE store.order_items IS '{
@@ -245,8 +247,6 @@ COMMENT ON TABLE store.order_items IS '{
   "display": "none"
 }';
 ```
-
-Set `"display": "none"` to hide the table from the schema's resource list while keeping it accessible through its parent.
 
 ## Best Practices
 
