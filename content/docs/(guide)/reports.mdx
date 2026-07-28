@@ -37,6 +37,7 @@ grant select on public.task_report to "user";
 - `type` - Must be "report"
 - `name` - Display name of the report
 - `description` - Description shown in UI
+- `template` - Optional boolean. Set to `true` to enable HTML-based PDF printing via an uploaded Handlebars template — see [PDF Reports with Handlebars Templates](#pdf-reports-with-handlebars-templates) below
 
 ### Detailed Report with Joins
 
@@ -437,6 +438,99 @@ GROUP BY month;
 -- Refresh daily
 REFRESH MATERIALIZED VIEW public.monthly_stats;
 ```
+
+## PDF Reports with Handlebars Templates
+
+Any report view can render a printable, PDF-ready version by uploading an HTML
+template written in [Handlebars](https://handlebarsjs.com/). When a template
+is present, the report page shows a **Print Report** button that fetches the
+current report rows, compiles them into the template client-side, and opens
+the result in a new tab for printing or saving as a PDF via the browser's
+print dialog.
+
+### 1. Flag the report
+
+Add `"template": true` to the view's comment metadata:
+
+```sql
+comment on view demo.invoices_report is '{"type": "report", "name": "Invoices Report", "description": "Invoices with client, project, and line item counts", "template": true}';
+```
+
+### 2. Write the template
+
+Templates are plain HTML files with Handlebars placeholders, compiled against
+`{ name, rows }` — `name` is the report's display name and `rows` is the
+currently loaded report data (respecting any active filters/sort/pagination):
+
+```hbs
+<h1>{{name}}</h1>
+<table border="1" cellspacing="0" cellpadding="4">
+  <thead>
+    <tr>
+      <th>Invoice #</th>
+      <th>Status</th>
+      <th>Client</th>
+      <th>Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each rows}}
+      <tr>
+        <td>{{invoice_number}}</td>
+        <td>{{status}}</td>
+        <td>{{client}}</td>
+        <td>{{total}}</td>
+      </tr>
+    {{else}}
+      <tr>
+        <td colspan="4">No data</td>
+      </tr>
+    {{/each}}
+  </tbody>
+</table>
+```
+
+### 3. Upload the template
+
+Templates live in the `report-templates` storage bucket at a **deterministic
+key**: `<schema>/<view_name>.hbs`. The path *is* the report identity — there's
+nothing else to configure — so the filename must exactly match the view name.
+
+For `demo.invoices_report`, upload the file to `demo/invoices_report.hbs`.
+
+Only a user holding the `x-admin` role can upload or manage templates;
+anyone with `select` on the report view can read the template and use the
+Print Report button. This is enforced by storage policies that ship with the
+reports migration:
+
+```sql
+-- Anyone with select on the underlying view can read its template
+create policy enable_read_authorized_report_templates_objects on storage.objects
+as permissive for select to authenticated using (
+  bucket_id = 'report-templates'
+  and path_tokens[2] like '%.hbs'
+  and has_table_privilege(
+    current_user,
+    format('%I.%I', path_tokens[1], regexp_replace(path_tokens[2], '\.hbs$', '')),
+    'select'
+  )
+);
+
+-- Only x-admin can upload/replace/delete templates
+create policy enable_write_admin_report_templates_objects on storage.objects
+as permissive for all to authenticated using (
+  bucket_id = 'report-templates'
+  and path_tokens[2] like '%.hbs'
+  and pg_has_role(current_user, 'x-admin', 'member')
+) with check (
+  bucket_id = 'report-templates'
+  and path_tokens[2] like '%.hbs'
+  and pg_has_role(current_user, 'x-admin', 'member')
+);
+```
+
+See `supabase/examples/templates/invoices_report.hbs` for a complete working
+example paired with `demo.invoices_report`.
 
 ## Report Permissions
 
