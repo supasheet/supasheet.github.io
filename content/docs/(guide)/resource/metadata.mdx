@@ -437,6 +437,7 @@ type ColumnMetadata = {
   name?: string         // Override the column label
   description?: string  // Helper text shown under inputs
   icon?: string         // Lucide icon
+  aggregate?: "none" | "count" | "count_distinct" | "sum" | "avg" | "min" | "max"
 }
 ```
 
@@ -451,6 +452,24 @@ COMMENT ON COLUMN store.products.sku IS '{
 <Callout type="info">
 `name` isn't just a form label — it now drives the column header everywhere the column appears: the data table, report tables, foreign-key display columns, and CSV export headers. Set it once here and it's consistent across the whole app.
 </Callout>
+
+### Default aggregate (`aggregate`)
+
+`aggregate` sets the default aggregate function shown in the sheet view's table footer for this column. It defaults to `"none"`; users can always change it per column at runtime from the footer selector.
+
+```sql
+COMMENT ON COLUMN store.invoices.total    IS '{"aggregate": "sum"}';
+COMMENT ON COLUMN store.invoices.due_date IS '{"aggregate": "max"}';
+COMMENT ON COLUMN store.orders.customer_id IS '{"aggregate": "count_distinct"}';
+```
+
+Not every function applies to every column type:
+
+- `count` / `count_distinct` — any column (non-empty / unique non-empty values)
+- `min` / `max` — numeric-backed columns (numbers, `MONEY`, `PERCENTAGE`, `DURATION`, `RATING`) plus date, time, and timestamp columns
+- `sum` / `avg` — numeric-backed columns only
+
+Aggregates are computed client-side over the rows currently loaded in the table (the current page), not server-side over the whole table. See [Footer Aggregates](/resource/basic#footer-aggregates) for how the footer behaves.
 
 ### Enum columns
 

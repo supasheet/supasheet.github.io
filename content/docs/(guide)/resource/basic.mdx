@@ -58,6 +58,25 @@ Toggle which columns to display:
 - Reorder columns (drag & drop)
 - Persisted in local storage
 
+### Footer Aggregates
+
+Every column in the sheet view gets an aggregate selector in the table footer. Pick a function and the result is shown next to it, computed client-side over the rows on the current page:
+
+| Function | Available on | Notes |
+|----------|--------------|-------|
+| `count` | all columns | counts non-empty values |
+| `count_distinct` | all columns | counts unique non-empty values |
+| `min` / `max` | number, money, percentage, duration, rating, date, time, datetime | temporal columns show the earliest/latest value as a date |
+| `sum` / `avg` | number, money, percentage, duration, rating | averages are rounded to 2 decimal places |
+
+The default is `none` (no aggregate shown). Set a per-column default with the `aggregate` key in the column's comment JSON:
+
+```sql
+COMMENT ON COLUMN store.invoices.total IS '{"aggregate": "sum"}';
+```
+
+Users can still change the function per column at runtime from the footer. See [Column-level Metadata](/resource/metadata#column-level-metadata) for the full comment schema.
+
 ## Form Generation
 
 Forms are automatically generated based on your schema.
