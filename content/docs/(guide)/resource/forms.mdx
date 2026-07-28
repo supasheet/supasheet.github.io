@@ -1,0 +1,311 @@
+---
+title: Custom Forms
+description: A full multi-field form UI backed by a SQL function, listed on a resource's overview page
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Overview
+
+Custom forms let you attach an operation that doesn't fit the built-in Create / Edit dialog to a resource: logging time against a task, kicking off a project for a client, generating invoice line items, previewing a computed report. Each form is just a **SQL function tagged with `{"type": "form"}`** in its comment. Supasheet discovers it automatically, lists it as a card on the target resource's overview page, and renders its arguments as a full form — sections, relation pickers, everything the standard create form supports.
+
+<Callout type="info">
+Forms are not tied to a specific row — they're not [row actions](/resource/actions). A row action auto-fills its arguments from one record and renders as a button on that row. A form is not bound to any record: it opens its own page from the resource's overview, and every argument is entered (or picked) by the user. Reach for a form when the operation needs more than one or two free-choice arguments, or picks a record unrelated to "the current row".
+</Callout>
+
+## How It Works
+
+1. Write a function that performs the operation (or a pure read — forms don't have to write anything).
+2. Tag it with a JSON comment: `type: "form"`, `resource: "<table_or_view_name>"`, a display `name`, and a `fields` block describing sections/relations.
+3. `REVOKE ALL` on the function, then `GRANT EXECUTE` directly to the roles that should see it.
+4. Supasheet lists the form as a card on `resource`'s overview page (`/$schema/resource/$resource`) for any user whose role can execute the function, and serves it at `/$schema/resource/$resource/form/$function_name`.
+
+```sql
+CREATE OR REPLACE FUNCTION demo.log_time_entry (
+  p_task_id uuid,
+  p_team_member_id uuid,
+  p_duration supasheet.DURATION,
+  p_is_billable boolean DEFAULT true,
+  p_notes text DEFAULT NULL
+) RETURNS uuid LANGUAGE plpgsql SECURITY INVOKER
+SET search_path = '' AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  INSERT INTO demo.time_entries (task_id, team_member_id, duration, is_billable, notes)
+  VALUES (p_task_id, p_team_member_id, p_duration, p_is_billable, p_notes)
+  RETURNING id INTO v_id;
+
+  RETURN v_id;
+END;
+$$;
+
+COMMENT ON FUNCTION demo.log_time_entry (uuid, uuid, supasheet.DURATION, boolean, text) IS '{
+  "type": "form",
+  "resource": "tasks",
+  "name": "Log time",
+  "description": "Record time spent on a task without leaving the board.",
+  "icon": "Clock",
+  "success_message": "Time entry logged",
+  "fields": {
+    "sections": [
+      {"id": "entry", "title": "Entry", "fields": ["p_task_id", "p_team_member_id"]},
+      {"id": "duration", "title": "Duration", "fields": ["p_duration", "p_is_billable", "p_notes"]}
+    ],
+    "relations": {
+      "p_task_id": {"table": "tasks", "column": "id", "display": ["title", "status"]},
+      "p_team_member_id": {"table": "team_members", "column": "id", "display": ["name", "avatar"]}
+    }
+  }
+}';
+
+REVOKE ALL ON FUNCTION demo.log_time_entry (uuid, uuid, supasheet.DURATION, boolean, text)
+FROM public, authenticated, service_role;
+
+GRANT EXECUTE ON FUNCTION demo.log_time_entry (uuid, uuid, supasheet.DURATION, boolean, text)
+TO "x-admin", "user";
+```
+
+<Callout type="info">
+Use `SECURITY INVOKER` (the default recommendation across Supasheet) so the function runs under the calling user's RLS context, not a superuser's.
+</Callout>
+
+## Comment Metadata
+
+```typescript
+type FormMeta = {
+  type: "form"
+  resource: string           // table/view name whose overview page lists this form
+  name: string                // Card title / form heading
+  description?: string        // Card subtitle / helper text under the form title
+  icon?: string                // Lucide icon
+  success_message?: string
+  fields?: {
+    sections?: FieldSection[]              // same shape as table create-form sections — see Metadata
+    behavior?: Record<string, FieldBehavior>  // same shape as column comment `behavior` — see Metadata
+    lookups?: Record<string, LookupConfig>    // same shape as column comment `lookups` — see Metadata
+    relations?: Record<string, {
+      schema?: string          // defaults to `resource`'s schema
+      table: string
+      column?: string          // defaults to "id"
+      display: string[]        // columns shown in the picker
+    }>
+  }
+}
+```
+
+`resource` must match the table/view name exactly — it does not need to match the schema the function itself lives in, so a form in one schema can be listed on a resource in another.
+
+## Argument Naming
+
+Parameters are matched to field config by stripping a leading `p_`, the same convention used everywhere else in Supasheet (row actions, form fields): `p_task_id` → field key `task_id`, default label "Task id" unless you override it. Any parameter without a SQL `DEFAULT` is required in the rendered form.
+
+## Relation Pickers
+
+`fields.relations` is what makes a form parameter into a searchable FK-style picker instead of a raw UUID input — useful because form parameters usually aren't real foreign keys on any table.
+
+```json
+"relations": {
+  "p_task_id": {"table": "tasks", "column": "id", "display": ["title", "status"]}
+}
+```
+
+This renders `p_task_id` as a picker over `tasks`, searchable/displayed by `title` and `status`, submitting the matched row's `id`.
+
+## Sections, Behavior & Lookups
+
+`fields.sections`, `fields.behavior`, and `fields.lookups` reuse the exact JSON shapes documented in [Metadata](/resource/metadata) for table column comments — a custom form is rendered by the same field-layout component as the standard record-create form, just backed by function parameters instead of table columns.
+
+## Result Rendering
+
+What happens after a successful submit depends on what the function returns:
+
+| Return shape | UI behavior |
+|---|---|
+| `void` / nothing object-shaped | Toasts `success_message`, navigates back to the resource |
+| A single row (table row type or `OUT` parameters) | Toasts, then renders the returned record as a detail card in place |
+| `SETOF <row>` / `TABLE(...)` | Toasts, then renders the returned rows as a table in place |
+
+This lets the same feature cover three different use cases: fire-and-forget writes, "create and show me the result" writes, and pure parameterized reads/previews that write nothing at all.
+
+```sql
+-- Returns setof rows: renders as a table of the newly generated invoice items
+CREATE OR REPLACE FUNCTION demo.generate_invoice_items_from_tasks (p_invoice_id uuid, p_service_id uuid)
+RETURNS SETOF demo.invoice_items LANGUAGE plpgsql SECURITY INVOKER
+SET search_path = '' AS $$
+  -- INSERT ... RETURNING *
+$$;
+
+-- Pure read, no writes at all — a form used purely as a parameterized report
+CREATE OR REPLACE FUNCTION demo.preview_team_billables (p_project_id uuid, p_service_id uuid DEFAULT NULL)
+RETURNS TABLE (team_member_name varchar, hours_logged numeric, hourly_rate numeric, estimated_cost numeric)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+  -- SELECT ... (no INSERT/UPDATE/DELETE)
+$$;
+```
+
+## Feedback & Refresh
+
+- On success, Supasheet shows `success_message` as a toast (or `"<name> submitted"` if omitted) and invalidates the resource's cached data so any table/detail view reflects new rows immediately.
+- On failure, the toast shows the error the function raised (`RAISE EXCEPTION`), or `"Failed to submit <name>"` if the error has no message.
+
+## Where Forms Appear
+
+Forms appear as cards on the tagged resource's overview page (`/$schema/resource/$resource`), alongside dashboard widget and chart cards and any configured links. Submitting one opens `/$schema/resource/$resource/form/$function_name`.
+
+## Permissions
+
+| Action | Required permission |
+|--------|---------------------|
+| See a form card on a resource's overview page | `EXECUTE` on the tagged function |
+| Submit the form | Same `EXECUTE` grant, plus whatever RLS policies the function's own reads/writes are subject to (respected as usual under `SECURITY INVOKER`) |
+
+Grant `EXECUTE` narrowly — `REVOKE ALL` first, then grant only to the roles that should see the form, the same pattern used for tables and row actions.
+
+## Discovery Functions
+
+Behind the scenes, the UI calls two RPCs:
+
+```sql
+SELECT * FROM supasheet.get_forms('demo', 'tasks');
+-- Every function in schema `demo` with "type": "form" and "resource": "tasks"
+-- that the current user can EXECUTE.
+
+SELECT * FROM supasheet.get_form_fields('demo', 'log_time_entry');
+-- Introspects the function's own arguments (name, type, default, nullability,
+-- enum labels) as if they were table columns, so the same field-rendering
+-- code used for tables can render them.
+```
+
+Both are defined in `supabase/migrations/99999999999999_meta.sql`.
+
+## Practical Examples
+
+### Create-and-show-result form
+
+```sql
+CREATE OR REPLACE FUNCTION demo.create_project_for_client (
+  p_client_id uuid,
+  p_name varchar,
+  p_owner_id uuid DEFAULT NULL,
+  p_budget numeric DEFAULT NULL,
+  p_due_date date DEFAULT NULL,
+  OUT project_id uuid,
+  OUT name varchar,
+  OUT client_id uuid,
+  OUT owner_id uuid,
+  OUT status demo.project_status,
+  OUT budget numeric,
+  OUT due_date date
+) LANGUAGE plpgsql SECURITY INVOKER
+SET search_path = '' AS $$
+DECLARE
+  v_project demo.projects%ROWTYPE;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM demo.clients WHERE id = p_client_id) THEN
+    RAISE EXCEPTION 'Client not found';
+  END IF;
+
+  INSERT INTO demo.projects (client_id, name, owner_id, budget, due_date)
+  VALUES (p_client_id, p_name, p_owner_id, p_budget, p_due_date)
+  RETURNING * INTO v_project;
+
+  project_id := v_project.id; name := v_project.name; client_id := v_project.client_id;
+  owner_id := v_project.owner_id; status := v_project.status;
+  budget := v_project.budget; due_date := v_project.due_date;
+END;
+$$;
+
+COMMENT ON FUNCTION demo.create_project_for_client (uuid, varchar, uuid, numeric, date) IS '{
+  "type": "form",
+  "resource": "clients",
+  "name": "Start a project",
+  "description": "Kick off a new project for this client and view the created record.",
+  "icon": "FolderPlus",
+  "success_message": "Project created",
+  "fields": {
+    "sections": [
+      {"id": "project", "title": "Project", "fields": ["p_client_id", "p_name", "p_owner_id"]},
+      {"id": "planning", "title": "Planning", "fields": ["p_budget", "p_due_date"]}
+    ],
+    "relations": {
+      "p_client_id": {"table": "clients", "column": "id", "display": ["name"]},
+      "p_owner_id": {"table": "team_members", "column": "id", "display": ["name"]}
+    }
+  }
+}';
+
+REVOKE ALL ON FUNCTION demo.create_project_for_client (uuid, varchar, uuid, numeric, date)
+FROM public, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION demo.create_project_for_client (uuid, varchar, uuid, numeric, date)
+TO "x-admin", "user";
+```
+
+### Parameterized report form (no writes)
+
+```sql
+CREATE OR REPLACE FUNCTION demo.preview_team_billables (p_project_id uuid, p_service_id uuid DEFAULT NULL)
+RETURNS TABLE (
+  team_member_name varchar,
+  hours_logged numeric,
+  hourly_rate numeric,
+  estimated_cost numeric
+) LANGUAGE plpgsql SECURITY INVOKER
+SET search_path = '' AS $$
+DECLARE
+  v_rate numeric(10, 2);
+BEGIN
+  IF p_service_id IS NOT NULL THEN
+    SELECT default_rate INTO v_rate FROM demo.services WHERE id = p_service_id;
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    tm.name,
+    ROUND(SUM(te.duration) / 1000.0 / 3600.0, 2),
+    COALESCE(v_rate, tm.hourly_rate, 0),
+    ROUND(SUM(te.duration) / 1000.0 / 3600.0, 2) * COALESCE(v_rate, tm.hourly_rate, 0)
+  FROM demo.time_entries te
+  JOIN demo.tasks t ON t.id = te.task_id
+  JOIN demo.team_members tm ON tm.id = te.team_member_id
+  WHERE t.project_id = p_project_id AND te.is_billable = true
+  GROUP BY tm.id, tm.name, tm.hourly_rate
+  ORDER BY tm.name;
+END;
+$$;
+
+COMMENT ON FUNCTION demo.preview_team_billables (uuid, uuid) IS '{
+  "type": "form",
+  "resource": "projects",
+  "name": "Preview team billables",
+  "description": "Estimate billable cost per team member from logged time, without creating an invoice.",
+  "icon": "Calculator",
+  "success_message": "Preview generated",
+  "fields": {
+    "sections": [{"id": "preview", "title": "Preview", "fields": ["p_project_id", "p_service_id"]}],
+    "relations": {
+      "p_project_id": {"table": "projects", "column": "id", "display": ["name"]},
+      "p_service_id": {"table": "services", "column": "id", "display": ["name"]}
+    }
+  }
+}';
+
+REVOKE ALL ON FUNCTION demo.preview_team_billables (uuid, uuid) FROM public, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION demo.preview_team_billables (uuid, uuid) TO "x-admin", "user";
+```
+
+## Best Practices
+
+- **Name parameters `p_<field_name>`.** That's what field-config matching keys off, same as row actions.
+- **Give every optional parameter a SQL `DEFAULT`.** Anything without one becomes a required field in the form.
+- **Use `fields.relations` for any parameter that references another table**, even if there's no real foreign key backing it — otherwise it renders as a raw UUID input.
+- **Keep functions `SECURITY INVOKER`.** RLS on the tables the function touches should still gate what it can actually read or change.
+- **It's fine for a form to write nothing.** A pure `SELECT`-only function is a valid way to ship an ad hoc, parameterized report UI without building a full report view.
+- **Grant narrowly.** `REVOKE ALL` first, then `GRANT EXECUTE` only to the specific roles the form is meant for.
+
+## Next Steps
+
+- **[Row Actions](/resource/actions)** — The same `type`-tagged, function-driven pattern, applied per-row instead of resource-wide
+- **[Metadata](/resource/metadata)** — `FieldSection`, `FieldBehavior`, `LookupConfig` shapes reused by `fields.sections`/`behavior`/`lookups`
+- **[Templates](/templates)** — Another `type`-tagged, function/view-driven feature, for bulk row creation instead of an ad hoc form
+- **[Authorization](/authorization)** — How roles and grants work across Supasheet
