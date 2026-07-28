@@ -44,6 +44,7 @@ type TableMetadata = {
   detail?: {                         // table-only — views have no detail page
     header?: { title?: string; badges?: string[] }
     tabs?: string[]
+    timelines?: string[]
   }
 }
 ```
@@ -372,7 +373,8 @@ Table-only — views have no detail page. Configures the detail page's heading a
 COMMENT ON TABLE desk.tasks IS '{
   "detail": {
     "header": {"title": "title", "badges": ["status", "priority"]},
-    "tabs": ["comments", "attachments"]
+    "tabs": ["comments", "attachments"],
+    "timelines": ["task_events"]
   }
 }';
 ```
@@ -384,6 +386,43 @@ COMMENT ON TABLE desk.tasks IS '{
 <Callout type="info">
 `tabs` has nothing to do with the Audit Log or Comments features — those are separate, grant-gated pages (audit via a fixed `SELECT` grant on `supasheet.audit_logs`; comments via the resource's own `SELECT` grant) linked from the record's actions menu, not tabs controlled by this field. See [Audit Logs](/audit-logs) and [Comments](/comments). Custom, function-backed buttons in that same actions menu are configured separately — see [Row Actions](/resource/actions).
 </Callout>
+
+---
+
+## `detail.timelines` — activity feed tabs
+
+`timelines` renders specific related-table tabs as a vertical **activity feed** instead of a data table — the same visual pattern as an audit log, but for your own domain events. A table listed in `timelines` is still just a normal FK-related child table; `timelines` only changes how *that one tab* is displayed. A name can appear in `tabs` or `timelines`, not both — if it's in `timelines`, that wins.
+
+```sql
+COMMENT ON TABLE desk.tasks IS '{
+  "detail": {"timelines": ["task_events"]}
+}';
+
+COMMENT ON TABLE desk.task_events IS '{
+  "icon": "History",
+  "display": "none",
+  "query": {
+    "sort": [{"id": "occurred_at", "desc": true}],
+    "join": [{"table": "users", "on": "actor_id", "alias": "actor", "columns": ["name", "avatar"]}]
+  }
+}';
+```
+
+The child table needs a specific column shape for the feed to render:
+
+| column        | required | rendered as |
+|---------------|----------|-------------|
+| `occurred_at` | yes | a `timestamptz`. The feed is always sorted by this column, descending — fixed, not configurable. |
+| `title`       | yes | the event's headline text. |
+| `event_type`  | no  | a badge, if the column carries the usual enum [column metadata](/resource/metadata#column-level-metadata) (`values` map with `variant`/`icon`). |
+| `metadata`    | no  | raw JSON, rendered inline (e.g. `{"from": "todo", "to": "done"}`). |
+| `actor_id`    | no  | rendered as "by *name*" — requires a `query.join` entry aliased **exactly** `"actor"`, pointing at the users table with `name` included in `columns`. |
+
+<Callout type="info">
+Timeline tables are typically system-populated activity logs, not something users fill in directly: `"display": "none"` (hidden from the sidebar, never browsable on its own), a trigger that inserts rows on changes to the parent, and grants limited to `SELECT` only (no `INSERT`/`UPDATE`/`DELETE`) so the feed is read-only. If `INSERT` is granted, a "New entry" button appears above the feed, opening the child table's own create form.
+</Callout>
+
+See `demo.tasks` / `demo.task_events` in `supabase/demo.sql` for a complete working example, including the trigger (`demo.trg_tasks_log_event`) that logs status, assignee, and priority changes onto the timeline.
 
 ---
 
