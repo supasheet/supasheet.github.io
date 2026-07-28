@@ -6,8 +6,6 @@
     "metadata",
     "query",
     "views",
-    "actions",
-    "updatable-views",
-    "materialized-views"
+    "actions"
   ]
 }
