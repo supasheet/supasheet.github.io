@@ -1,22 +1,23 @@
 ---
 title: Views
-description: Six visualization types for your data — Sheet, Kanban, Calendar, Gallery, List, and Tree
+description: Seven visualization types for your data — Sheet, Kanban, Calendar, Gallery, List, Tree, and Gantt
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 ## Overview
 
-Every resource in Supasheet can be rendered through six different view types. You declare the available views in the table comment, and users can switch between them from the resource toolbar.
+Every resource in Supasheet can be rendered through seven different view types. You declare the available views in the table comment, and users can switch between them from the resource toolbar.
 
 | View | Best for | Required hints |
 |------|----------|----------------|
 | **Sheet** | Default spreadsheet view of all columns | None (always available) |
 | **Kanban** | Items grouped by status / category | `group`, `title`, optional `description`, `badge`, `date` |
-| **Calendar** | Time-based data with a start (and optional end) date | `title`, `start_date`, optional `end_date`, `badge` |
+| **Calendar** | Time-based data with a start (and optional end) date | `title`, `start_date`, optional `end_date`, `badge`, `read_only` |
 | **Gallery** | Card-style display with cover images | `cover`, `title`, optional `description`, `badge` |
 | **List** | Compact vertical list with summary fields | `title`, optional `description`, `field_1`, `field_2` |
 | **Tree** | Hierarchical, parent–child data | `parent`, `title`, optional `secondary` |
+| **Gantt** | Scheduling with date ranges, grouped rows, and progress | `title`, `start_date`, `end_date`, optional `group`, `progress`, `badge`, `read_only` |
 
 ## Configuring Views
 
@@ -37,7 +38,10 @@ COMMENT ON TABLE desk.projects IS $$
      "badge": "status"},
     {"id": "gallery",  "name": "Project Gallery",    "type": "gallery",
      "cover": "cover", "title": "title", "description": "description",
-     "badge": "status"}
+     "badge": "status"},
+    {"id": "gantt",    "name": "Project Roadmap",    "type": "gantt",
+     "group": "status", "title": "title", "start_date": "start_date",
+     "end_date": "end_date", "progress": "progress", "badge": "priority"}
   ]
 }
 $$;
@@ -102,6 +106,7 @@ Renders records as events on a calendar. Supports day, week, and month layouts.
 | `start_date` | yes | Event start (date / timestamptz column) |
 | `end_date` | no | Event end — if omitted the event is treated as a single-day item |
 | `badge` | no | Column rendered as a styled badge on the event |
+| `read_only` | no | When `true`, disables drag-to-move, resize, and click-to-create — the calendar becomes view-only |
 
 ```sql
 COMMENT ON TABLE desk.projects IS '{
@@ -110,7 +115,10 @@ COMMENT ON TABLE desk.projects IS '{
   "views": [
     {"id": "calendar", "name": "Project Timeline", "type": "calendar",
      "title": "title", "start_date": "start_date", "end_date": "end_date",
-     "badge": "status"}
+     "badge": "status"},
+    {"id": "created", "name": "Created Date (read-only)", "type": "calendar",
+     "title": "title", "start_date": "created_at", "badge": "status",
+     "read_only": true}
   ]
 }';
 ```
@@ -192,6 +200,37 @@ COMMENT ON TABLE hr.departments IS '{
 Tree views work best with explicit ordering — add a `sort` clause in the table's `query` metadata so siblings render in a deterministic order.
 </Callout>
 
+### Gantt
+
+Renders records as schedulable bars on a day/week/month/quarter/year timeline, optionally grouped into rows by an enum / text field. Bars support drag-to-reschedule, resize, and a progress fill.
+
+| Field | Required | Purpose |
+|-------|----------|---------|
+| `type` | yes | Must be `"gantt"` |
+| `title` | yes | Column shown as the bar's label |
+| `start_date` | yes | Bar start (date / timestamptz column) |
+| `end_date` | yes | Bar end (date / timestamptz column) |
+| `group` | no | Column to group rows by (typically an enum) — omit for a flat list of rows |
+| `progress` | no | Numeric column (0–100) rendered as a fill inside the bar |
+| `badge` | no | Column that drives the bar's colour |
+| `read_only` | no | When `true`, disables drag-to-reschedule and resize — the gantt becomes view-only |
+
+```sql
+COMMENT ON TABLE desk.projects IS '{
+  "icon": "FolderKanban",
+  "primary_view": "gantt",
+  "views": [
+    {"id": "gantt", "name": "Project Roadmap", "type": "gantt",
+     "group": "status", "title": "title", "start_date": "start_date",
+     "end_date": "end_date", "progress": "progress", "badge": "priority"}
+  ]
+}';
+```
+
+<Callout type="info">
+Rows without both a `start_date` and `end_date` value are skipped — every record needs a real date range to appear on the timeline. Use Calendar instead if your data only has a single date (or an optional end date).
+</Callout>
+
 ## Choosing the Default View
 
 `primary_view` matches the `id` of one of the entries in `views`. It controls which view opens when a user clicks the resource in the sidebar.
@@ -210,7 +249,7 @@ If `primary_view` is omitted, the resource opens in the standard sheet view.
 
 ## Inline Editing (Side Sheets)
 
-Every view supports an inline editor that slides in from the side. When a user clicks a card (Kanban, Gallery, List, Calendar), opens a row in the sheet, or expands a node in the tree, the editor opens in-place — you don't need to navigate to a separate detail page.
+Every view supports an inline editor that slides in from the side. When a user clicks a card (Kanban, Gallery, List, Calendar, Gantt), opens a row in the sheet, or expands a node in the tree, the editor opens in-place — you don't need to navigate to a separate detail page.
 
 Inline editing uses the field sections defined in the [metadata `fields.sections`](/resource/metadata) configuration.
 
@@ -250,7 +289,7 @@ COMMENT ON TABLE store.order_items IS '{
 
 ## Best Practices
 
-- **Pick the view that matches the data shape.** Kanban for status workflows, Calendar for time-based items, Gallery for visual records, Tree for hierarchies, List for compact lookups.
+- **Pick the view that matches the data shape.** Kanban for status workflows, Calendar for time-based items, Gantt for scheduling with date ranges and progress, Gallery for visual records, Tree for hierarchies, List for compact lookups.
 - **Use `badge` thoughtfully.** Pair it with the [enum metadata](/resource/metadata#enum-columns) to colour-code statuses and priorities.
 - **Define multiple views per resource.** Users can switch between them — kanban-by-status and kanban-by-priority on the same table covers two distinct workflows for free.
 - **Set a `primary_view` that reflects the dominant workflow.** If you spend most of your time on the kanban, make that the default.

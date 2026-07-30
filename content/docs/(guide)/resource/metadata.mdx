@@ -113,7 +113,7 @@ COMMENT ON TABLE blog.blog_settings IS '{
 
 Any table related to a parent via a foreign key automatically renders as a tab on the parent's detail page — no configuration needed. Rows inside a detail-page tab always open in an inline slide-over ("sheet") instead of navigating away, regardless of `inline_form`.
 
-`inline_form` only affects the table's *own* top-level views (its table/grid/kanban/calendar/gallery/list/tree pages, if it's ever browsed directly rather than through a parent's tab). When `true`, opening or creating a record there also uses the sheet overlay instead of the full detail page:
+`inline_form` only affects the table's *own* top-level views (its table/grid/kanban/calendar/gallery/list/tree/gantt pages, if it's ever browsed directly rather than through a parent's tab). When `true`, opening or creating a record there also uses the sheet overlay instead of the full detail page:
 
 ```sql
 COMMENT ON TABLE store.order_items IS '{
@@ -146,7 +146,7 @@ COMMENT ON TABLE desk.tasks IS '{
 
 ## `views` and `primary_view`
 
-`views` declares the alternate views (Kanban, Calendar, Gallery, List, Tree). `primary_view` is the `id` of the view to load by default. See **[Views](/resource/views)** for the per-view configuration reference.
+`views` declares the alternate views (Kanban, Calendar, Gallery, List, Tree, Gantt). `primary_view` is the `id` of the view to load by default. See **[Views](/resource/views)** for the per-view configuration reference.
 
 ```sql
 COMMENT ON TABLE desk.projects IS '{

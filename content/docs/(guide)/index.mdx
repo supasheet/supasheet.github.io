@@ -20,7 +20,7 @@ It follows a **SQL-first** philosophy: you define your data model and business l
 - **User Management** — Create, invite, update, and delete users via the Supabase Admin API
 - **Authorization (RBAC)** — Three built-in roles (`x-admin`, `admin`, `user`) with fine-grained per-table permissions and PostgreSQL Row Level Security
 - **Resource (CRUD)** — Auto-generated create / read / update / delete UIs for any table or view
-- **Six View Types** — Sheet (table), Kanban, Calendar, Gallery, List, and Tree, switchable per resource
+- **Seven View Types** — Sheet (table), Kanban, Calendar, Gallery, List, Tree, and Gantt, switchable per resource
 - **Form Sections** — Organize create/update forms into collapsible titled sections with per-mode field visibility
 - **Conditional Fields** — Field visibility, required state, and read-only state driven by other field values
 - **Lookups** — Auto-fill related fields and cascading dropdowns from a foreign key selection
@@ -46,7 +46,7 @@ Supasheet is built on top of Supabase:
 - **Realtime** — Optional realtime subscriptions for live updates
 - **Edge Functions** — Deno-powered admin endpoints for user management
 
-The frontend (React 19 + Vite + TanStack Router) introspects your schema through Supasheet's `supasheet` meta schema and dynamically renders a full CMS — CRUD forms, all six view types, dashboards, charts, reports, file browsers, and admin pages — without you writing any UI code.
+The frontend (React 19 + Vite + TanStack Router) introspects your schema through Supasheet's `supasheet` meta schema and dynamically renders a full CMS — CRUD forms, all seven view types, dashboards, charts, reports, file browsers, and admin pages — without you writing any UI code.
 
 ## Getting Started
 
