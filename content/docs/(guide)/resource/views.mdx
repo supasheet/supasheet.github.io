@@ -12,7 +12,7 @@ Every resource in Supasheet can be rendered through seven different view types. 
 | View | Best for | Required hints |
 |------|----------|----------------|
 | **Sheet** | Default spreadsheet view of all columns | None (always available) |
-| **Kanban** | Items grouped by status / category | `group`, `title`, optional `description`, `badge`, `date` |
+| **Kanban** | Items grouped by status / category | `group`, `title`, optional `description`, `badge`, `date`, `read_only` |
 | **Calendar** | Time-based data with a start (and optional end) date | `title`, `start_date`, optional `end_date`, `badge`, `read_only` |
 | **Gallery** | Card-style display with cover images | `cover`, `title`, optional `description`, `badge` |
 | **List** | Compact vertical list with summary fields | `title`, optional `description`, `field_1`, `field_2` |
@@ -79,6 +79,7 @@ Cards grouped into columns by a single enum / text field.
 | `description` | no | Secondary line on each card |
 | `badge` | no | Column rendered as a styled badge (great for priority, status) |
 | `date` | no | Date column shown in the card footer |
+| `read_only` | no | When `true`, disables drag-and-drop between columns — the board becomes view-only |
 
 ```sql
 COMMENT ON TABLE desk.tasks IS '{
@@ -90,7 +91,10 @@ COMMENT ON TABLE desk.tasks IS '{
      "date": "created_at", "badge": "priority"},
     {"id": "priority", "name": "Tasks By Priority", "type": "kanban",
      "group": "priority", "title": "title", "description": "description",
-     "date": "created_at", "badge": "status"}
+     "date": "created_at", "badge": "status"},
+    {"id": "archived", "name": "Archived (read-only)", "type": "kanban",
+     "group": "status", "title": "title", "description": "description",
+     "read_only": true}
   ]
 }';
 ```
