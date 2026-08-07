@@ -419,7 +419,7 @@ The child table needs a specific column shape for the feed to render:
 | `actor_id`    | no  | rendered as "by *name*" — requires a `query.join` entry aliased **exactly** `"actor"`, pointing at the users table with `name` included in `columns`. |
 
 <Callout type="info">
-Timeline tables are typically system-populated activity logs, not something users fill in directly: `"display": "none"` (hidden from the sidebar, never browsable on its own), a trigger that inserts rows on changes to the parent, and grants limited to `SELECT` only (no `INSERT`/`UPDATE`/`DELETE`) so the feed is read-only. If `INSERT` is granted, a "New entry" button appears above the feed, opening the child table's own create form.
+Timeline tables are typically system-populated activity logs, not something users fill in directly: `"display": "none"` (hidden from the sidebar, never browsable on its own), a trigger that inserts rows on changes to the parent, and grants limited to `SELECT` only (no `INSERT`/`UPDATE`/`DELETE`) so the feed is read-only. The timeline itself is always a read-only feed — it renders no create button, even where `INSERT` is granted. Add rows from a trigger, or from the child table's own resource route.
 </Callout>
 
 See `demo.tasks` / `demo.task_events` in `supabase/demo.sql` for a complete working example, including the trigger (`demo.trg_tasks_log_event`) that logs status, assignee, and priority changes onto the timeline.
