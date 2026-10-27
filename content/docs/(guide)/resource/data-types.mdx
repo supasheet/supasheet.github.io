@@ -146,6 +146,25 @@ CREATE TABLE tasks (
 - Visual color preview in tables
 - Supports hex format (#RRGGBB)
 
+### BARCODE
+
+Domain for barcode and SKU values (product codes, serial numbers, asset tags).
+
+```sql
+CREATE DOMAIN BARCODE AS TEXT;
+
+-- Usage
+CREATE TABLE services (
+  id UUID PRIMARY KEY,
+  sku BARCODE UNIQUE
+);
+```
+
+**UI Features:**
+- Text input with a barcode icon
+- Scannable Code 128 barcode rendered next to the value in tables and detail views
+- Plain text filtering and sorting
+
 ### AVATAR
 
 Domain for avatar/profile image URLs.
@@ -269,6 +288,9 @@ CREATE TABLE products (
   -- Media
   cover FILE,
   logo AVATAR,
+
+  -- Identification
+  sku BARCODE,
 
   -- Customization
   brand_color COLOR,
